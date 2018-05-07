@@ -53,12 +53,8 @@ g tfpr_bar_raw = sum_routput_raw / ( (sum_wages_raw^alpha_1996) * (sum_capn_raw^
 g log_tfpr_raw = log(tfpr_i_raw/tfpr_bar_raw)
 
 g tfpq_i_raw = (routput^((`sigma')/(`sigma'-1)))/((capn^alpha_1996) * (wages ^ (1-alpha_1996)))
-*g tfpq_bar_raw = (sum_routput_raw^((`sigma')/(`sigma'-1))) / ( (sum_wages_raw^alpha_1996) * (sum_capn_raw^(1-alpha_1996)) )
-*bys year sector: egen tfpq_bar_raw = mean(tfpq_i_raw)
-*g log_tfpq_raw = log(tfpq_i_raw/tfpq_bar_raw)
 bys year sector: egen pre_a_s_bar_raw = sum((tfpq_i_raw/sum_count_raw)^sigma_minus)
-g log_tfpq_raw = tfpq_i_raw/ (pre_a_s_bar_raw^(1/sigma_minus))
-*bys year sector: egen tfpq_bar_raw = mean(tfpq_i)
+g log_tfpq_raw = log(tfpq_i_raw/ (pre_a_s_bar_raw^(1/sigma_minus)))
 
 g drop_flag_tfpr = 0
 g drop_flag_tfpq = 0
@@ -113,17 +109,12 @@ bys sector: egen sum_wages_1996 = sum(wages_1996)
 bys sector: egen sum_Y_1996 = sum(Y_1996)
 g alpha_1996 = sum_wages_1996 / sum_Y_1996
 
-
 *Now recalculate TFPQ Measures
 
 g tfpq_i = (routput^((`sigma')/(`sigma'-1)))/((capn^(1-alpha_1996)) * (wages ^ alpha_1996))
 bys year sector: egen pre_a_s_bar = sum((tfpq_i/sum_count)^sigma_minus)
 g a_s_bar = pre_a_s_bar ^ (1/sigma_minus)
 g tfpq_i_deviation = tfpq_i * sum_count^(1/sigma_minus) / a_s_bar
-*bys year sector: egen sum_tfpq_i_sigma = sum(tfpq_i^(`sigma'-1))
-*g a_bar = (sum_routput^((`sigma')/(`sigma'-1)))/((sum_capn^(1-alpha_1996)) * (sum_wages ^ alpha_1996))
-*g tfpq_i_deviation = tfpq_i * sum_count^(1/sigma_minus) / a_s_bar
-*g tfpq_i_deviation = tfpq_i  / tfpq_bar
 g log_tfpq_i_deviation = log(tfpq_i_deviation)
 
 g tfpq_i_deviation_alt = tfpq_i / (pre_a_s_bar^(1/sigma_minus))
@@ -134,17 +125,12 @@ g log_tfpq_i_deviation_alt = log(tfpq_i_deviation_alt)
         xtitle("Distribution of TFPQ") ytitle("") title("Ghana: 1996 TFPQ of Manufacturing Firms")  ///
 		note("Source: CSAE Ghana RPED/GMES Data" "Calculations as in Hsieh Klenow QJE 1996 paper") )
 		
-		graph export "$out/TFPQ Distribution 1996.pdf", as (pdf) replace
+		graph export "$out/TFPQ_Dist_1996.pdf", as (pdf) replace
 
 
 *Now recalculate TFPR Measures
 
-
 g tfpr_i = routput / ( (wages^alpha_1996) * (capn^(1-alpha_1996)) )
-
-*g tfpq_i= (routput^((`sigma')/(`sigma'-1)))/((capn^alpha_1996) * (wages ^ (1-alpha_1996)))
-
-
 g tfpr_bar = sum_routput / ( (sum_wages^alpha_1996) * (sum_capn^(1-alpha_1996)) )
 
 g log_tfpr_i = log(tfpr_i)
@@ -164,11 +150,7 @@ g log_tfpr_i_deviation = log(tfpr_i/tfpr_bar)
         xtitle("Distribution of TFPR") ytitle("") title("Ghana: 1996 TFPR of Manufacturing Firms")  ///
 		note("Source: CSAE Ghana RPED/GMES Data" "Calculations as in Hsieh Klenow QJE 1996 paper") )
 		
-		graph export "$out/TFPR Distribution 1996.pdf", as (pdf) replace
-
-		
-		
-*su log_tfpq, d
+		graph export "$out/TFPR_Dist_1996.pdf", as (pdf) replace
 
 **Distribution
 
@@ -243,7 +225,8 @@ foreach prod in tfpq tfpr {
 }
 		
 	
-keep variable y_19* y_20*		
+*keep variable y_19* y_20*	
+keep variable y_1992* y_1996* y_1999*	
 keep if variable != ""
 
 save "$temp/Tables I and II", replace
@@ -259,7 +242,7 @@ title(Dispersion of TFPQ) footnote("Source: CSAE Ghana RPED/GMES Data.") ///
 	
 use "$temp/Tables I and II", clear
 
-keep variable *tfpq
+keep variable *tfpr
 
 export excel "$out/Table II: TFPR Dispersion.xlsx", replace
 texsave using "$out/Table II: TFPR Dispersion.tex", ///
@@ -356,8 +339,6 @@ g effic_sector_output_theta = (tfp_s_effic * (sum_capn^(1-alpha_1996)) * (sum_wa
 
 *Actual
 bys year sector: egen pre_tfp_s_actual = sum((tfpq_i*tfpr_bar / (tfpr_i*sum_count))^(sigma_minus))
-*bys year sector: egen pre_tfp_s_actual_count = count(tfpq_i)
-*g tfp_s = ((pre_tfp_s_actual)/(pre_tfp_s_actual_count^(`sigma'-1)))^(1/(`sigma'-1))
 g tfp_s_actual = pre_tfp_s_actual^(1/(sigma_minus))
 g actual_sector_output_theta = (tfp_s_actual * (sum_capn^(1-alpha_1996)) * (sum_wages ^ alpha_1996) )^theta_1996
 
@@ -376,6 +357,30 @@ tab year ln_economy_actual_output
 
 g output_gains_from_tfp = 100*((economy_effic_output/economy_actual_output)-1)
 tab year output_gains_from_tfp
+
+preserve
+
+g pre_value = 0
+
+foreach year in 1992 1996  1999 {
+	replace pre_value = 0
+	replace pre_value =  output_gains_from_tfp if year == `year'
+	egen value = max(pre_value)
+	g y_`year' = value
+	drop value
+	}
+	
+g num_obs = [_n]
+keep if num_obs == 1
+
+keep y_*
+
+texsave using "$out/Table IV: TFP Gains from Equalizing TFPR Within Industries.tex", ///
+title(TFP Gains from Equalizing TFPR Within Industries) footnote("Source: CSAE Ghana RPED/GMES Data.  Entires ae 100(Y_efficient / Y - 1).") ///
+replace
+
+restore
+
 
 
 
