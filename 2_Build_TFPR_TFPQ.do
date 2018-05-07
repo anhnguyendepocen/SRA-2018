@@ -17,6 +17,8 @@ use "$raw/firms", clear
 
 local sigma = 3
 
+g sigma_minus = `sigma' - 1
+
 
 drop if capn == . | wages == . | routput == .
 drop if routput < 1
@@ -38,24 +40,24 @@ g alpha_1996 = sum_wages_1996 / sum_Y_1996
 
 **Calculate Marginal Product of Labor and of Capital for Dropping Observations
 
-foreach var in capn wages routput {
+g count = 1
+
+foreach var in capn wages routput count {
 
 bys sector year: egen sum_`var'_raw = sum(`var')
 
 }
 
-g tfpr_bar_raw = sum_routput_raw / ( (sum_wages_raw^alpha_1996) * (sum_capn_raw^(1-alpha_1996)) )
-
 g tfpr_i_raw = routput / ( (wages^alpha_1996) * (capn^(1-alpha_1996)) )
-
+g tfpr_bar_raw = sum_routput_raw / ( (sum_wages_raw^alpha_1996) * (sum_capn_raw^(1-alpha_1996)) )
 g log_tfpr_raw = log(tfpr_i_raw/tfpr_bar_raw)
 
-g tfpq_bar_raw = (sum_routput_raw^((`sigma')/(`sigma'-1))) / ( (sum_wages_raw^alpha_1996) * (sum_capn_raw^(1-alpha_1996)) )
-
 g tfpq_i_raw = (routput^((`sigma')/(`sigma'-1)))/((capn^alpha_1996) * (wages ^ (1-alpha_1996)))
-
-g log_tfpq_raw = log(tfpq_i_raw/tfpq_bar_raw)
-
+*g tfpq_bar_raw = (sum_routput_raw^((`sigma')/(`sigma'-1))) / ( (sum_wages_raw^alpha_1996) * (sum_capn_raw^(1-alpha_1996)) )
+*bys year sector: egen tfpq_bar_raw = mean(tfpq_i_raw)
+*g log_tfpq_raw = log(tfpq_i_raw/tfpq_bar_raw)
+bys year sector: egen pre_a_s_bar_raw = sum((tfpq_i_raw/sum_count_raw)^sigma_minus)
+g log_tfpq_raw = tfpq_i_raw/ (pre_a_s_bar_raw^(1/sigma_minus))
 *bys year sector: egen tfpq_bar_raw = mean(tfpq_i)
 
 g drop_flag_tfpr = 0
@@ -64,11 +66,12 @@ g drop_flag_tfpq = 0
 
 foreach prod in tfpr tfpq {
 			di "enters prod loop.  prod is `prod'"
-			foreach i in 8 92 {
+			foreach i in 5 95 {
 				di "enters values loop.  prod is `prod' and i is `i'"
 			
-				bys year sector: egen pct_log_`prod'_`i'_raw = pctile(log_`prod'_raw), p(`i')
-				
+				*bys year sector: egen pct_log_`prod'_`i'_raw = pctile(log_`prod'_raw), p(`i')
+				bys year: egen pct_log_`prod'_`i'_raw = pctile(log_`prod'_raw), p(`i')
+
 				di "generates pctile"
 				
 			if `i' < 10 {
@@ -90,8 +93,6 @@ drop if drop_flag_comb == 1
 
 
 ***Now Calculate TFPR Measures
-
-g count = 1
 
 foreach var in capn wages routput count {
 
@@ -115,15 +116,19 @@ g alpha_1996 = sum_wages_1996 / sum_Y_1996
 
 *Now recalculate TFPQ Measures
 
-g tfpq_i = (routput^((`sigma')/(`sigma'-1)))/((capn^alpha_1996) * (wages ^ (1-alpha_1996)))
-
+g tfpq_i = (routput^((`sigma')/(`sigma'-1)))/((capn^(1-alpha_1996)) * (wages ^ alpha_1996))
+bys year sector: egen pre_a_s_bar = sum((tfpq_i/sum_count)^sigma_minus)
+g a_s_bar = pre_a_s_bar ^ (1/sigma_minus)
+g tfpq_i_deviation = tfpq_i * sum_count^(1/sigma_minus) / a_s_bar
 *bys year sector: egen sum_tfpq_i_sigma = sum(tfpq_i^(`sigma'-1))
-bys year sector: egen sum_tfpq_i_sigma = sum((tfpq_i/sum_count)^(`sigma'-1))
-g a_sector_bar = sum_tfpq_i_sigma ^ (1/(`sigma'-1))
-
-*g tfpq_i_deviation = tfpq_i * sum_count^(1/(`sigma'-1)) / a_sector_bar
-g tfpq_i_deviation = tfpq_i  / a_sector_bar
+*g a_bar = (sum_routput^((`sigma')/(`sigma'-1)))/((sum_capn^(1-alpha_1996)) * (sum_wages ^ alpha_1996))
+*g tfpq_i_deviation = tfpq_i * sum_count^(1/sigma_minus) / a_s_bar
+*g tfpq_i_deviation = tfpq_i  / tfpq_bar
 g log_tfpq_i_deviation = log(tfpq_i_deviation)
+
+g tfpq_i_deviation_alt = tfpq_i / (pre_a_s_bar^(1/sigma_minus))
+g log_tfpq_i_deviation_alt = log(tfpq_i_deviation_alt)
+
 
  twoway (kdensity log_tfpq_i_deviation if year == 1996, ///
         xtitle("Distribution of TFPQ") ytitle("") title("Ghana: 1996 TFPQ of Manufacturing Firms")  ///
@@ -175,14 +180,92 @@ foreach prod in tfpr tfpq {
 	g disp_75_25_log_`prod' = pct_75_log_`prod' - pct_25_log_`prod'
 	g disp_90_10_log_`prod' = pct_90_log_`prod' - pct_10_log_`prod'
 	
-	bys year: egen nobs_`prod' = count(log_`prod'_i)
+	bys year: egen nobs_`prod' = count(log_`prod'_i_deviation)
 	}
 
 preserve
-g obs = [_n]
-keep if obs == 1
-keep year disp* sd_log* nobs_*
-export excel "$out/Table I and II.xlsx", replace
+
+egen min_year = min(year)
+egen max_year = max(year)
+local minyear = min_year
+local maxyear = max_year
+
+g variable = ""
+
+g obs_counter = [_n]
+
+g pre_value = 0
+
+foreach prod in tfpq tfpr {
+
+	replace variable = "S.D." if obs_counter == 1
+	replace variable = "75 - 25" if obs_counter == 2
+	replace variable = "90 - 10" if obs_counter == 3
+	replace variable = "N" if obs_counter == 4
+	
+	forv i = `minyear'(1)`maxyear' {
+		g y_`i'_`prod' = 0
+		
+			disp "s.d.  y is `i'"
+			replace pre_value = 0
+			replace pre_value = sd_log_`prod' if year == `i'
+			egen value = max(pre_value)
+			local value = value
+			replace y_`i'_`prod' = `value' if obs_counter == 1
+			drop value
+			
+			disp "75 25  y is `i'"
+			replace pre_value = 0
+			replace pre_value = disp_75_25_log_`prod' if year == `i'
+			egen value = max(pre_value)
+			local value = value
+			replace y_`i'_`prod' = `value' if obs_counter == 2
+			drop value
+
+			disp "90 10  y is `i'"
+			replace pre_value = 0
+			replace pre_value = disp_90_10_log_`prod' if year == `i'
+			egen value = max(pre_value)
+			local value = value
+			replace y_`i'_`prod' = `value' if obs_counter == 3
+			drop value
+
+			disp "N  y is `i'"
+			replace pre_value = 0
+			replace pre_value = nobs_`prod' if year == `i'
+			egen value = max(pre_value)
+			local value = value
+			replace y_`i'_`prod' = `value' if obs_counter == 4
+			drop value
+		}
+		
+		di "exits year loop"
+}
+		
+	
+keep variable y_19* y_20*		
+keep if variable != ""
+
+save "$temp/Tables I and II", replace
+
+use "$temp/Tables I and II", clear
+
+keep variable *tfpq
+
+export excel "$out/Table I: TFPQ Dispersion.xlsx", replace
+texsave using "$out/Table I: TFPQ Dispersion.tex", ///
+title(Dispersion of TFPQ) footnote("Source: CSAE Ghana RPED/GMES Data.") ///
+	replace
+	
+use "$temp/Tables I and II", clear
+
+keep variable *tfpq
+
+export excel "$out/Table II: TFPR Dispersion.xlsx", replace
+texsave using "$out/Table II: TFPR Dispersion.tex", ///
+title(Dispersion of TFPR) footnote("Source: CSAE Ghana RPED/GMES Data.") ///
+	replace		
+	
 restore
 	
 
@@ -209,7 +292,7 @@ foreach y in 1992 1996  1999 {
 		regsave using "$temp/Sources of TFPR Variation in `y'", addlabel(Specification,"+ Region") append
 	*reg log_tfpr_i_deviation i.owndum_encode fmage worker skill workersq skillsq eduwgt i.locdum_encode if year == `y'
 	use "$temp/Sources of TFPR Variation in `y'", clear
-	texsave using "$out/Underling Table III: Sources of TFPR Variation in `y'.tex", ///
+	texsave using "$out/Table III: Sources of TFPR Variation in `y'.tex", ///
 	title(Regression for Sources of TFPR Variation) footnote("Source: CSAE Ghana RPED/GMES Data.  Percent sources represent R^2 from OLS regression adding each additional (set of) explanatory variable(s).") ///
 	replace
 	
@@ -229,8 +312,20 @@ foreach y in 1992 1996  1999 {
 		
 }
 	
-
 use "$temp/All_Years_Log_TFPR_TFPQ", clear
+
+egen min_year = min(year)
+egen max_year = max(year)
+bys sector firm: egen firm_min_year = min(year)
+bys sector firm : egen firm_max_year = max(year)
+bys sector firm: egen count_firm_years = count(year)
+g exit = firm_max_year < max_year
+
+reg exit log_tfpr_i_deviation if year == firm_max_year - 1 & firm_min_year == min_year 
+reg exit log_tfpq_i_deviation if year == firm_max_year - 1 & firm_min_year == min_year 
+
+reg exit log_tfpr_i_deviation if year == firm_max_year - 1 
+reg exit log_tfpq_i_deviation if year == firm_max_year - 1 
 
 	 
 * pick 1992 1996 and 1999
@@ -255,17 +350,16 @@ g theta_1996 = sectoral_output / total_output_1996
 *Calculate efficient output
 
 *Efficient
-bys year sector: egen tfpq_effic = sum(tfpq_i^(`sigma'-1))
-bys year sector: egen tfpq_effic_count = count(tfpq_i)
-*g tfpq_bar_effic = ((tfpq_effic)/tfpq_effic_count)^(1/(`sigma'-1))
-g tfpq_bar_effic = ((tfpq_effic))^(1/(`sigma'-1))
-g effic_sector_output_theta = (tfpq_bar_effic * (sum_capn^(1-alpha_1996)) * (sum_wages ^ alpha_1996) )^theta_1996
+bys year sector: egen pre_tfp_s_effic = sum((tfpq_i/sum_count)^sigma_minus)
+g tfp_s_effic = pre_tfp_s_effic ^ (1/(sigma_minus))
+g effic_sector_output_theta = (tfp_s_effic * (sum_capn^(1-alpha_1996)) * (sum_wages ^ alpha_1996) )^theta_1996
 
 *Actual
-bys year sector: egen pre_tfp_s_actual = sum((tfpq_i*tfpr_bar / tfpr_i)^(`sigma'-1))
-bys year sector: egen pre_tfp_s_actual_count = count(tfpq_i)
-g tfp_s = ((pre_tfp_s_actual)/pre_tfp_s_actual_count)^(1/(`sigma'-1))
-g actual_sector_output_theta = (tfp_s * (sum_capn^(1-alpha_1996)) * (sum_wages ^ alpha_1996) )^theta_1996
+bys year sector: egen pre_tfp_s_actual = sum((tfpq_i*tfpr_bar / (tfpr_i*sum_count))^(sigma_minus))
+*bys year sector: egen pre_tfp_s_actual_count = count(tfpq_i)
+*g tfp_s = ((pre_tfp_s_actual)/(pre_tfp_s_actual_count^(`sigma'-1)))^(1/(`sigma'-1))
+g tfp_s_actual = pre_tfp_s_actual^(1/(sigma_minus))
+g actual_sector_output_theta = (tfp_s_actual * (sum_capn^(1-alpha_1996)) * (sum_wages ^ alpha_1996) )^theta_1996
 
 *Now Sum
 egen tag_for_output = tag(sector year)
@@ -282,12 +376,6 @@ tab year ln_economy_actual_output
 
 g output_gains_from_tfp = 100*((economy_effic_output/economy_actual_output)-1)
 tab year output_gains_from_tfp
-
-
-///*** MAKE OUTPUT ***///
-
-g tfpq_dispersion_graph = log(tfpq_i * (tfpq_effic_count^(1/(`sigma'-1))) / tfpq_bar_effic)
-kdensity tfpq_dispersion_graph if year == 1996
 
 
 
