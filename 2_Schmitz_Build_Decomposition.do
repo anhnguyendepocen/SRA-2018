@@ -34,7 +34,7 @@ g max_less_min_year = (max_firm_year - min_firm_year) + 1
 
 g diff_years = max_less_min_year - count_firm_years
 
-*There do not appear to be any entrants
+drop if diff_year > 0
 
 g routput_1996 = 0
 replace routput_1996 = routput if year == 1996
@@ -60,8 +60,6 @@ g theta_mat_1996 =  pre_theta_materials_1996 / (pre_theta_labor_1996 + pre_theta
 
 *Now Compute Sectoral Level Variables
 
-*drop if diff_year > 0
-
 bys year sector: egen sectoral_routput = sum(routput)
 bys year sector: egen sectoral_wages = sum(wages)
 bys year sector: egen sectoral_capn = sum(capn)
@@ -71,8 +69,6 @@ g sectoral_tfp = sectoral_routput / (sectoral_wages ^ theta_labor_1996 * sectora
 g sectoral_labor_prod = sectoral_routput / (sectoral_wages ^ theta_labor_1996 )
 g sectoral_cap_prod = sectoral_routput / (sectoral_capn ^ theta_cap_1996 )
 g sectoral_mat_prod = sectoral_routput / (sectoral_mat ^ theta_mat_1996)
-
-
 
 egen tag_for_graph = tag(year sector)
 
@@ -179,35 +175,111 @@ sort sector firm year
 
 *Now Make Table II
 
-bys year sector: egen sum_year_sector_routput = sum(routput)
-bys year sector: egen sum_year_sector_wages = sum(wages)
+save "$temp/pre_table_II", replace
 
-g s_it = wages / sum_year_sector_wages
-g pi_it = routput / sum_year_sector_routput
+*Now create shell for merging
+use "$temp/pre_table_II", clear
 
 xtset firm year
+g lag_year = L1.year
+keep if year == lag_year + 1 | year == sector_min_year
+bys sector year: egen min_firm_for_keep = min(firm)
+keep if min_firm_for_keep == firm
 
-bys year sector: egen pi = sum_year_sector_routput / sum_year_sector_wages
-g overall_growth = L1.pi
+keep sector year sector_min_year sector_max_year
+sort sector year
+
+keep sector year
+save "$temp/sector year shell for merge", replace
+
+use "$temp/pre_table_II", clear
+
+keep continuing exit entrant routput wages firm sector year sector_min_year sector_max_year
+
+save "$temp/data for merge", replace
+
+use "$temp/pre_table_II", clear
+
+keep sector firm
+duplicates drop
+
+save "$temp/sector firm shell for merge", replace
+
+use "$temp/sector year shell for merge", clear
+
+joinby sector using "$temp/sector firm shell for merge"
+
+save "$temp/shell for merge", replace
+
+use "$temp/shell for merge", clear
+
+merge 1:1 sector firm year using "$temp/data for merge"
+
+bys year sector: egen sum_year_sector_routput = sum(routput)
+bys year sector: egen sum_year_sector_wages = sum(wages)
+bys year sector: egen count_continuing = sum(continuing)
+bys year sector: egen count_firms_sector_year = count(firm)
+
+g s_it = wages / sum_year_sector_wages
+g pi_it = routput / wages 
+replace s_it = 0 if s_it == .
+replace pi_it = 0 if pi_it == .
+
+bys year sector: g pi = sum_year_sector_routput / sum_year_sector_wages
+xtset firm year
+
+g overall_growth = D1.pi
 g delta_pi_it = D1.pi_it
 g delta_s_it = D1.s_it
 
+xtset firm year
 g pre_within_mine = 0
 replace pre_within_mine = L1.s_it * delta_pi_it if continuing == 1
 bys year sector: egen within_mine = sum(pre_within_mine)
 
+xtset firm year
 g pre_between_mine = 0
 replace pre_between_mine = (L1.pi_it - L1.pi) * delta_s_it if continuing == 1
 bys year sector: egen between_mine = sum(pre_between_mine)
 
+xtset firm year
 g pre_cross_mine = 0
 replace pre_cross_mine = delta_pi_it * delta_s_it if continuing == 1
 bys year sector: egen cross_mine = sum(pre_cross_mine)
 
+xtset firm year
 g pre_exit_prod = 0
 replace pre_exit_prod = L1.s_it * (L1.pi_it - L1.pi) if exit == 1
 bys year sector: egen exit_prod = sum(pre_exit_prod)
 
+xtset firm year
 g pre_entrant_prod = 0
 replace pre_entrant_prod = s_it * (pi_it - L1.pi) if entrant == 1
 bys year sector: egen entrant_prod = sum(pre_entrant_prod)
+
+*keep if sector == 2 & year <= 1992
+*export excel using "$temp/scratch.xlsx", replace first(var)
+*1994sector 1
+
+keep if sector == 1 & year <= 1994 & year >= 1993
+export excel using "$temp/debug sector 1 1994.xlsx", replace first(var)
+
+
+*preserve
+xtset firm year
+g lag_year = L1.year
+keep if year == lag_year + 1 | year == sector_min_year
+bys sector year: egen min_firm_for_keep = min(firm)
+keep if min_firm_for_keep == firm
+
+sort sector year
+keep sector year overall_growth within_mine between_mine cross_mine exit_prod entrant_prod
+
+g check_sum_prod =  within_mine + between_mine + cross_mine ///
+						- exit_prod + entrant_prod
+
+
+sort sector year
+browse sector year overall_growth check_sum_prod		
+
+*keep if sector == 1 & year <= 1993
