@@ -126,7 +126,7 @@ twoway (line pegged_tfp year) ///
         xtitle("Year") ytitle("Productivity (Pegged to `minyear' = 1)", size(medsmall)) title("Productivity over Time for Ghana `secname' Sector")  ///
 		note("Source: CSAE Ghana RPED/GMES Data") legend(size(vsmall)) )
 
-	graph export "$out/Productivty Over Time for `secname'.pdf", as (pdf) replace
+	*graph export "$out/Productivty Over Time for `secname'.pdf", as (pdf) replace
 		
 	restore	
 		
@@ -160,9 +160,11 @@ forv s = `min_sector'(1)`max_sector' {
 	forv y = `minyear'(1)`maxyear' {
 		replace first_year = 1 if year == `minyear' & sector == `s'
 		replace continuing = 1 if year > min_firm_year & sector == `s' & year < max_firm_year
-		replace entrant = 1 if year != `minyear' & sector == `s' & year == min_firm_year
+		replace entrant = 1 if year != `minyear' & sector == `s' & year == min_firm_year & first_year != 1
 		replace exit = 1 if year != `maxyear' & sector == `s' & year == max_firm_year & year != `minyear'
-		replace last_year = 1 if year == `maxyear'
+		replace last_year = 1 if year == `maxyear' & sector == `s'
+		replace continuing = 1 if year == `maxyear' & sector == `s'
+		*replace continuing = 1 if year == `minyear' & sector == `s'
 		}
 	}
 
@@ -225,7 +227,8 @@ g pi_it = routput / wages
 replace s_it = 0 if s_it == .
 replace pi_it = 0 if pi_it == .
 
-bys year sector: g pi = sum_year_sector_routput / sum_year_sector_wages
+*bys year sector: g pi = sum_year_sector_routput / sum_year_sector_wages
+g pi = sum_year_sector_routput / sum_year_sector_wages
 xtset firm year
 
 g overall_growth = D1.pi
@@ -239,7 +242,8 @@ bys year sector: egen within_mine = sum(pre_within_mine)
 
 xtset firm year
 g pre_between_mine = 0
-replace pre_between_mine = (L1.pi_it - L1.pi) * delta_s_it if continuing == 1
+*replace pre_between_mine = (L1.pi_it - L1.pi) * delta_s_it if continuing == 1
+replace pre_between_mine = (L1.pi_it) * delta_s_it if continuing == 1
 bys year sector: egen between_mine = sum(pre_between_mine)
 
 xtset firm year
@@ -249,21 +253,37 @@ bys year sector: egen cross_mine = sum(pre_cross_mine)
 
 xtset firm year
 g pre_exit_prod = 0
-replace pre_exit_prod = L1.s_it * (L1.pi_it - L1.pi) if exit == 1
+*replace pre_exit_prod = L1.s_it * (L1.pi_it - L1.pi) if L1.exit == 1
+replace pre_exit_prod = L1.s_it * (L1.pi_it) if L1.exit == 1
 bys year sector: egen exit_prod = sum(pre_exit_prod)
 
 xtset firm year
 g pre_entrant_prod = 0
-replace pre_entrant_prod = s_it * (pi_it - L1.pi) if entrant == 1
+*replace pre_entrant_prod = s_it * (pi_it - L1.pi) if entrant == 1
+replace pre_entrant_prod = s_it * (pi_it) if entrant == 1
 bys year sector: egen entrant_prod = sum(pre_entrant_prod)
 
-*keep if sector == 2 & year <= 1992
-*export excel using "$temp/scratch.xlsx", replace first(var)
+
+xtset firm year
+g pre_between_mine_alt = 0
+g pre_exit_prod_alt = 0
+g pre_entrant_prod_alt = 0
+replace pre_between_mine_alt = (L1.pi_it - L1.pi) * delta_s_it if continuing == 1
+replace pre_exit_prod_alt = L1.s_it * (L1.pi_it - L1.pi) if L1.exit == 1
+replace pre_entrant_prod_alt = s_it * (pi_it - L1.pi) if entrant == 1
+bys year sector: egen between_mine_alt = sum(pre_between_mine_alt)
+bys year sector: egen exit_prod_alt = sum(pre_exit_prod_alt)
+bys year sector: egen entrant_prod_alt = sum(pre_entrant_prod_alt)
+
+*keep if sector == 1 & year <= 1992
+*export excel using "$temp/debug sector 1 1992.xlsx", replace first(var)
 *1994sector 1
 
-keep if sector == 1 & year <= 1994 & year >= 1993
-export excel using "$temp/debug sector 1 1994.xlsx", replace first(var)
+*keep if sector == 1 & year <= 1994 & year >= 1993
+*export excel using "$temp/debug sector 1 1994.xlsx", replace first(var)
 
+*keep if sector == 1 & year <= 2000 & year >= 1999
+*export excel using "$temp/debug sector 1 2000.xlsx", replace first(var)
 
 *preserve
 xtset firm year
@@ -273,13 +293,21 @@ bys sector year: egen min_firm_for_keep = min(firm)
 keep if min_firm_for_keep == firm
 
 sort sector year
-keep sector year overall_growth within_mine between_mine cross_mine exit_prod entrant_prod
+keep sector year overall_growth within_mine between_mine cross_mine exit_prod entrant_prod ///
+	between_mine_alt exit_prod_alt entrant_prod_alt
 
 g check_sum_prod =  within_mine + between_mine + cross_mine ///
 						- exit_prod + entrant_prod
 
+g check_sum_prod_alt_ent_exit =  within_mine + between_mine + cross_mine ///
+						- exit_prod_alt + entrant_prod_alt						
+						
+g check_sum_prod_alt_all = 	within_mine + between_mine_alt + cross_mine ///
+						- exit_prod_alt + entrant_prod_alt					
+						
 
 sort sector year
-browse sector year overall_growth check_sum_prod		
+browse sector year overall_growth check_sum_prod check_sum_prod_alt_ent_exit check_sum_prod_alt_all ///
+	within_mine between_mine cross_mine exit_prod entrant_prod	 	
 
 *keep if sector == 1 & year <= 1993
