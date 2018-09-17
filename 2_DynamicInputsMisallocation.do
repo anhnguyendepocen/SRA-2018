@@ -17,7 +17,7 @@ use "$raw/firms", clear
 *Begin by estimating betas for each industry
 ***///
 
- drop if routput == . | routput == 0 | wages == . | wages == 0 | capn == . | capn == 0 | fmage == 0 
+ drop if routput == . | routput == 0 | wages == . | wages == 0 | capn == . | capn == 0 | fmage == 0 | capn < 0
 
  *As in previous samples use 1996
  
@@ -214,8 +214,43 @@ bys year sector: egen sd_year_ind_mrpm = sd(mrpm)
 
 
 /*
+*STRUCTURAL ANALYSIS 
+*/
+
+*Estimate the adjustment cost function
+*Moments:
+*1. % of firms with less than 5% year-on-year change in capital
+xtset firm year
+g change_cap_populated = 0
+replace change_cap_populated = 1 if D1.cap != .
+g change_cap_perc = abs(D1.cap) / L1.cap
+g change_cap_perc_lt_5 = 0 if change_cap_populated == 1
+replace change_cap_perc_lt_5 = 1 if change_cap_perc < .05
+
+bys sector: egen count_cap_change_pop = sum(change_cap_populated)
+bys sector: egen count_cap_change_lt_5_perc = sum(change_cap_perc_lt_5)
+g moment_cap_change_lt_5_perc = count_cap_change_lt_5_perc / count_cap_change_pop
+
+*2. % of firms with more than 20% year-on-year change in capital
+g change_cap_perc_gt_20 = 0 if change_cap_populated == 1
+replace change_cap_perc_gt_20 = 1 if change_cap_perc > .2
+
+bys sector: egen count_cap_change_gt_20_perc = sum(change_cap_perc_gt_20)
+g moment_cap_change_gt_20_perc = count_cap_change_gt_20_perc / count_cap_change_pop
+
+*3. SD of change in log capital
+xtset firm year
+g log_cap_change = D1.lcap
+bys sector: egen moment_sd_change_cap = sd(log_cap_change)
+
+save "$temp/StructuralAnalysisData", replace
+
+**Need to compute optimal policy for firms as function of the fixed and variable cost given omega and capital
 
 
+
+
+/*
 
 *MLE estimator
 g sigma1_best = -10

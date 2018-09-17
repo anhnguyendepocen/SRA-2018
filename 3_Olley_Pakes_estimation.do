@@ -14,6 +14,7 @@ use "$raw/firms", clear
 
 *Check if there are any missing years
 
+
 g drop = 0
 replace drop = 1 if routput == . | routput == 0 | wages == . | wages == 0 | capn == . | capn == 0 | fmage == 0 
 
@@ -232,9 +233,10 @@ foreach sp in `specs' {
 }
 
 drop if obs > 4
+drop var coef stderr N r2 Specification obs OP
 
-texsave using "$out/Table IV: Estimates of Production Function Parameters.tex", ///
-	title(Production Function Regressions) footnote("Source: CSAE Ghana RPED/GMES Data") ///
+texsave using "$out/OP Table IV: Estimates of Production Function Parameters.tex", ///
+	title(Olley Pakes Production Function Regressions) footnote("Source: CSAE Ghana RPED/GMES Data") ///
 	replace
 
 	
@@ -397,7 +399,17 @@ foreach sp in `specs' {
 }
 
 drop if obs > 5
+drop var coef stderr N r2 Specification obs LP
 
+*Reorder Columns
+
+
+order variable FE FE_Balanced OLS OLS_Balanced LP_Only_P_FE LP_Only_P_OLS LP_Only_Psi_FE LP_Only_Psi_OLS Semi_Parametric_LP_FE Semi_Parametric_LP_OLS
+
+
+texsave using "$out/LP Table IV: Estimates of Production Function Parameters.tex", ///
+	title(Levinsohn Petrin Production Function Regressions) footnote("Source: CSAE Ghana RPED/GMES Data") ///
+	replace
 
 /*******
 Ackerberg Method
@@ -538,3 +550,16 @@ foreach sp in `specs' {
 }
 
 drop if obs > 5
+
+drop var coef stderr N r2
+drop Specification obs
+drop LP
+
+
+*order variable FE FE_Balanced OLS OLS_Balanced AC_Only_P_FE AC_Only_P_OLS AC_Only_Psi_FE AC_Only_Psi_OLS Semi_Parametric_AC_FE Semi_Parametric_AC_OLS
+order variable AC_Only_P_FE AC_Only_P_OLS AC_Only_Psi_FE AC_Only_Psi_OLS Semi_Parametric_AC_FE Semi_Parametric_AC_OLS
+
+
+texsave using "$out/Ack Table IV: Estimates of Production Function Parameters.tex", ///
+	title(Ackerberg Production Function Regressions) footnote("Source: CSAE Ghana RPED/GMES Data") ///
+	replace
